@@ -1,0 +1,210 @@
+#!/bin/bash
+#BSUB -J cumulonimbus
+#BSUB -W 0:30
+#BSUB -n 40
+#BSUB -q short
+#BSUB -o wave_mpi_dist.%J.out
+#BSUB -e wave_mpi_dist.%J.err
+#BSUB -m "polus-c3-ib polus-c4-ib"
+#BSUB -R "span[ptile=20]"
+#BSUB -x
+
+# 注意：
+# 1. -n 40 请求总共40个核心
+# 2. span[ptile=20] 告诉LSF每个节点分配20个核心（填满物理核），这会强制使用 40/20 = 2个节点。
+# 3. 去掉了 -m 指定节点的参数，让LSF自动选择空闲节点（比如c2和c3），避免因指定c3/c4忙碌而排队。
+
+echo "======================================================"
+echo "MPI-only Performance Test - Teacher's Distribution"
+echo "======================================================"
+echo "Date: $(date)"
+echo "Hostname: $(hostname)"
+echo ""
+
+# 问题规模
+export PROBLEM_N=256
+export PROBLEM_K=20
+
+# 要测试的 MPI 进程数
+PROCESS_COUNTS=(1 2 4 8 12 16 20 32 40)
+
+# 结果输出文件
+RESULT_FILE="wave_mpi_256_20_results.txt"
+DETAIL_FILE="wave_mpi_256_20_details.txt"
+
+> "$RESULT_FILE"
+> "$DETAIL_FILE"
+
+# 写入测试配置信息
+echo "=== Test Configuration ===" >> "$RESULT_FILE"
+echo "Master Node: $(hostname)" >> "$RESULT_FILE"
+echo "Date: $(date)" >> "$RESULT_FILE"
+echo "Problem Size (N): $PROBLEM_N" >> "$RESULT_FILE"
+echo "Time steps (K): $PROBLEM_K" >> "$RESULT_FILE"
+echo "Distribution Strategy: Balanced Node/Socket (PPR)" >> "$RESULT_FILE"
+echo "" >> "$RESULT_FILE"
+
+# 硬件信息
+echo "=== CPU Information ===" >> "$DETAIL_FILE"
+lscpu >> "$DETAIL_FILE" 2>&1
+echo "" >> "$DETAIL_FILE"
+echo "=== NUMA Configuration ===" >> "$DETAIL_FILE"
+numactl --hardware >> "$DETAIL_FILE" 2>&1 || echo "numactl not available" >> "$DETAIL_FILE"
+echo "" >> "$DETAIL_FILE"
+
+# 结果表头
+printf "%-6s| %-4s| %-12s| %-18s| %s\n" \
+"Procs" "Run" "Time(s)" "MaxAbsError" "Status" >> "$RESULT_FILE"
+echo "------|-----|--------------|--------------------|--------" >> "$RESULT_FILE"
+
+EXECUTABLE_NAME="./wave_mpi"
+
+# 主测试循环
+for procs in "${PROCESS_COUNTS[@]}"; do
+  echo ""
+  echo "Testing with $procs MPI processes (N=$PROBLEM_N, K=$PROBLEM_K)"
+  
+  # ============================================================
+  # 核心修改：根据进程数动态计算分布策略
+  # 目标：总共4个Socket (2 Nodes * 2 Sockets)，要均匀填空。
+  # ============================================================
+  
+  if [ "$procs" -lt 4 ]; then
+    # 情况 A: 进程数少于 4 (如 1, 2)
+    # 策略: 优先跨节点分布。
+    # 2个进程 -> Node 1 跑一个, Node 2 跑一个
+    MPI_STRATEGY="--map-by node --bind-to core"
+    STRATEGY_DESC="Spread across nodes"
+  else
+    # 情况 B: 进程数 >= 4 (如 4, 8, 12... 40)
+    # 策略: 均匀填满所有 Socket。
+    # 计算公式: 每个 Socket 的进程数 = 总进程数 / 4
+    ppr_val=$(( procs / 4 ))
+    
+    # ppr:N:socket -> Processes Per Resource : N : Socket
+    MPI_STRATEGY="--map-by ppr:${ppr_val}:socket --bind-to core"
+    STRATEGY_DESC="Balanced: ${ppr_val} procs per socket (Total 4 sockets)"
+  fi
+
+  echo "Strategy: $MPI_STRATEGY"
+  echo "" >> "$DETAIL_FILE"
+  echo "=== Testing with $procs MPI processes ===" >> "$DETAIL_FILE"
+  echo "=== Strategy: $STRATEGY_DESC ===" >> "$DETAIL_FILE"
+
+  for run in 1 2 3; do
+    echo "  Run $run of 3..."
+
+    TEMP_OUT="/tmp/mpi_dist_temp_${procs}p_${run}.out"
+
+    # 执行 mpirun，使用上面计算好的 MPI_STRATEGY
+    # mpirun -np "$procs" \
+    #  $MPI_STRATEGY \
+    #  $EXECUTABLE_NAME "$PROBLEM_N" "$PROBLEM_K" \
+    #  > "$TEMP_OUT" 2>&1
+    mpirun -np "$procs" \
+      $MPI_STRATEGY \
+      --display-map \
+      --report-bindings \
+      $EXECUTABLE_NAME "$PROBLEM_N" "$PROBLEM_K" \
+      > "$TEMP_OUT" 2>&1	
+
+    # 提取结果
+    EXEC_TIME=$(grep "Calculation time:" "$TEMP_OUT" | tail -1 | awk '{print $3}')
+    [ -z "$EXEC_TIME" ] && EXEC_TIME="N/A"
+
+    MAX_ABS_ERROR=$(grep "Final max error:" "$TEMP_OUT" | tail -1 | awk '{print $4}')
+    [ -z "$MAX_ABS_ERROR" ] && MAX_ABS_ERROR="N/A"
+
+    # 状态判断
+    if [ "$MAX_ABS_ERROR" == "N/A" ] || [ "$EXEC_TIME" == "N/A" ]; then
+      STATUS="Failed"
+    else
+      STATUS="Success"
+    fi
+
+    # 写入结果
+    printf "%-6s| %-4s| %-12s| %-18s| %s\n" \
+           "$procs" "$run" "$EXEC_TIME" "$MAX_ABS_ERROR" "$STATUS" >> "$RESULT_FILE"
+
+    cat "$TEMP_OUT" >> "$DETAIL_FILE"
+    rm -f "$TEMP_OUT"
+
+    echo "    Time: ${EXEC_TIME} s, MaxAbsError: ${MAX_ABS_ERROR}"
+  done
+done
+
+echo ""
+echo "=========================================="
+echo "Performance Summary Tables"
+echo "==========================================" >> "$RESULT_FILE"
+
+# 平均时间表
+echo "" >> "$RESULT_FILE"
+echo "=== Average Performance (Time) ===" >> "$RESULT_FILE"
+printf "%-6s| %-16s| %-16s| %-16s\n" \
+       "Procs" "Avg Time(s)" "Min Time(s)" "Max Time(s)" >> "$RESULT_FILE"
+echo "------|------------------|------------------|------------------" >> "$RESULT_FILE"
+
+for procs in "${PROCESS_COUNTS[@]}"; do
+  VALUES=$(awk -F'|' -v p="$procs" '
+    $1 ~ "^"p"[[:space:]]*$" {
+      gsub(/ /,"",$3);
+      if($3 != "N/A") print $3
+    }' "$RESULT_FILE")
+
+  if [ -n "$VALUES" ]; then
+    AVG=$(echo "$VALUES" | awk '{sum+=$1; count++} END {if(count>0) printf "%.4f", sum/count}')
+    MIN=$(echo "$VALUES" | sort -n | head -1)
+    MAX=$(echo "$VALUES" | sort -n | tail -1)
+    printf "%-6s| %-16s| %-16s| %-16s\n" \
+           "$procs" "$AVG" "$MIN" "$MAX" >> "$RESULT_FILE"
+  fi
+done
+
+# 加速比计算 (基准: 1进程)
+echo "" >> "$RESULT_FILE"
+echo "=== Speedup Analysis (Based on Time) ===" >> "$RESULT_FILE"
+
+BASE_PROCS=${PROCESS_COUNTS[0]}
+BASE_TIME=$(awk -F'|' -v p="$BASE_PROCS" '
+  $1 ~ "^"p"[[:space:]]*$" {
+    gsub(/ /,"",$3);
+    if($3 != "N/A"){sum+=$3; count++}
+  }
+  END {if(count>0) printf "%.4f", sum/count}
+' "$RESULT_FILE")
+
+if [ -n "$BASE_TIME" ]; then
+  echo "Baseline: Procs=$BASE_PROCS, Time=${BASE_TIME} s" >> "$RESULT_FILE"
+  echo "" >> "$RESULT_FILE"
+  echo "Procs | Avg Time(s) | Speedup | Efficiency(%)" >> "$RESULT_FILE"
+  echo "------|-------------|---------|---------------" >> "$RESULT_FILE"
+  
+  for procs in "${PROCESS_COUNTS[@]}"; do
+    AVG_TIME=$(awk -F'|' -v p="$procs" '
+      $1 ~ "^"p"[[:space:]]*$" {
+        gsub(/ /,"",$3);
+        if($3 != "N/A"){sum+=$3; count++}
+      }
+      END {if(count>0) printf "%.4f", sum/count}
+    ' "$RESULT_FILE")
+
+    if [ -n "$AVG_TIME" ] && [ "$(echo "$AVG_TIME > 0" | bc)" -eq 1 ]; then
+      SPEEDUP=$(echo "scale=4; $BASE_TIME / $AVG_TIME" | bc)
+      EFFICIENCY=$(echo "scale=2; ($SPEEDUP / $procs) * 100" | bc)
+
+      printf "%-6s| %-11s| %-7s| %-13.2f\n" \
+             "$procs" "$AVG_TIME" "$SPEEDUP" "$EFFICIENCY" >> "$RESULT_FILE"
+    fi
+  done
+fi
+
+echo "" >> "$RESULT_FILE"
+echo "Test completed at: $(date)" >> "$RESULT_FILE"
+
+echo ""
+echo "=========================================="
+echo "Test Completed!"
+echo "Results saved to: $RESULT_FILE"
+echo "Details saved to: $DETAIL_FILE"
+echo "=========================================="

@@ -1,0 +1,13 @@
+#BSUB -J wave_256_8mpi_2omp
+#BSUB -W 00:15
+#BSUB -o "run_512_8_2.%J.out"
+#BSUB -e "run_512_8_2.%J.err"
+#BSUB -n 8                       # 【关键】：申请 8 个 MPI 进程
+#BSUB -R "span[ptile=8]"         # (可选) 将这 8 个进程限制在同一个节点 (因为 16 核 < 20 核，放得下)
+#BSUB -R "affinity[core(2)]"     # 【关键】：每个进程分配 2 个物理核心 (给 2 个线程用)
+
+# 设置每个进程 2 个线程
+export OMP_NUM_THREADS=2
+
+# 运行命令：网格大小 256
+mpiexec ./wave_hybrid 512 100

@@ -1,0 +1,13 @@
+#BSUB -J wave_128_4mpi_8omp_phys
+#BSUB -W 00:15
+#BSUB -o "run_128_4_8.%J.out"
+#BSUB -e "run_128_4_8.%J.err"
+#BSUB -n 4                       # 4 个 MPI 进程
+#BSUB -R "span[ptile=2]"         # 【关键】：强制每个节点只放 2 个进程 (因为 2 * 8 = 16 核，塞得下)
+#BSUB -R "affinity[core(8)]"     # 【关键】：每个进程给足 8 个物理核心
+
+# 设置线程数为 8
+export OMP_NUM_THREADS=8
+
+# 运行命令
+mpiexec ./wave_hybrid 128 20

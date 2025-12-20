@@ -1,0 +1,16 @@
+#BSUB -J wave_256_8mpi_8omp
+#BSUB -W 00:15
+#BSUB -o "run_512_8_8.%J.out"
+#BSUB -e "run_512_8_8.%J.err"
+#BSUB -n 8                       # 申请 8 个 MPI 进程
+#BSUB -R "span[ptile=4]"         # 【关键】：每个节点放 4 个进程
+                                 # 解释：4 进程 x 4 核心 = 16 核心/节点。
+                                 # 这样 2 个节点就能跑完 (共 32 核心)，且负载均衡。
+#BSUB -R "affinity[core(4)]"     # 【关键】：每个进程只给 4 个物理核心
+
+# 【关键】：强制开启 8 个线程
+# 结果 = 8 线程 / 4 核心 = 2 线程/核心 (利用 SMT-2)
+export OMP_NUM_THREADS=8
+
+# 运行命令
+mpiexec ./wave_hybrid 512 100

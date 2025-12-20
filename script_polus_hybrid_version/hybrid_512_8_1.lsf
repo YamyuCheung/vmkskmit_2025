@@ -1,0 +1,13 @@
+#BSUB -J wave_256_8mpi_1omp
+#BSUB -W 00:15
+#BSUB -o "run_512_8_1.%J.out"
+#BSUB -e "run_512_8_1.%J.err"
+#BSUB -n 8                       # 【关键】：申请 8 个 MPI 进程
+#BSUB -R "span[ptile=8]"         # (可选) 将这 8 个进程放在同一个节点上，减少通信延迟
+#BSUB -R "affinity[core(1)]"     # 【关键】：每个进程分配 1 个物理核心
+
+# 设置每个进程只有 1 个线程
+export OMP_NUM_THREADS=1
+
+# 运行命令：网格大小 256，时间步 20
+mpiexec ./wave_hybrid 512 100

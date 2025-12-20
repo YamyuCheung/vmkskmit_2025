@@ -1,0 +1,13 @@
+#BSUB -J cumulonimbus
+#BSUB -W 00:15
+#BSUB -o "run_128_4_2.%J.out"
+#BSUB -e "run_128_4_2.%J.err"
+#BSUB -n 4                       # 【修正】：这里填 MPI 进程数 (4)
+#BSUB -R "span[ptile=4]"         # (可选) 建议填 4，确保这 4 个进程在同一个节点
+#BSUB -R "affinity[core(2)]"     # 【关键】：告诉调度器，每个 MPI 进程需要 2 个物理核心
+
+# 设置线程数为 2
+export OMP_NUM_THREADS=2
+
+# 运行命令 (不需要加 -np，它会自动跟随 BSUB -n 的设置)
+mpiexec ./wave_hybrid 128 20

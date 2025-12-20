@@ -1,0 +1,14 @@
+#BSUB -J wave_256_8mpi_4omp
+#BSUB -W 00:15
+#BSUB -o "run_256_8_4.%J.out"
+#BSUB -e "run_256_8_4.%J.err"
+#BSUB -n 8                       # 【关键】：申请 8 个 MPI 进程
+#BSUB -R "span[ptile=4]"         # 【关键】：强制每个节点只放 4 个进程
+                                 # (因为 4进程 x 4核 = 16核 < 20核，一个节点放得下；但放8个就不行了)
+#BSUB -R "affinity[core(4)]"     # 【关键】：每个进程分配 4 个物理核心 (给 4 个线程用)
+
+# 设置每个进程 4 个线程
+export OMP_NUM_THREADS=4
+
+# 运行命令
+mpiexec ./wave_hybrid 256 20

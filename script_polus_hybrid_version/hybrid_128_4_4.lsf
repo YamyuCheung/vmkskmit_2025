@@ -1,0 +1,13 @@
+#BSUB -J wave_128_4mpi_4omp
+#BSUB -W 00:15
+#BSUB -o "run_128_4_4.%J.out"
+#BSUB -e "run_128_4_4.%J.err"
+#BSUB -n 4                       # 保持不变：4 个 MPI 进程
+#BSUB -R "span[ptile=4]"         # 保持不变：4 个进程放在同一个节点
+#BSUB -R "affinity[core(4)]"     # 【修改1】：改为 4，给每个进程分配 4 个物理核心
+
+# 设置线程数为 4
+export OMP_NUM_THREADS=4         # 【修改2】：改为 4
+
+# 运行命令
+mpiexec ./wave_hybrid 128 20
