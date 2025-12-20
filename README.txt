@@ -1,3 +1,6 @@
+Реализация седьмого практического задания в рамках курса "Суперкомпьютерное моделирование и технологии"
+
+
 ## Сборка и Запуск (Build and Run)
 
 For convenience, a `Makefile` is provided to automate the compilation process on the Polus cluster.
