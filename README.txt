@@ -1,5 +1,8 @@
 Реализация седьмого практического задания в рамках курса "Суперкомпьютерное моделирование и технологии" 2025 г. ВМК МГУ
 
+Задание получило «автомат» на «5».
+(https://www.dropbox.com/scl/fo/qrsl88g9s8yibljdxvs2c/AMDrQDPgLPhI8mVCuf9QVwc?dl=0&e=1&preview=Оценки+за+задания.xlsx&rlkey=t4d15jjtwiiq3rztj420eg4wk&st=sjnpd4xl)
+
 
 ## Сборка и Запуск (Build and Run)
 
